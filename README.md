@@ -19,3 +19,5 @@ Python 3.x
 
 ![image](https://github.com/user-attachments/assets/bae840b1-b3b0-444e-a2bf-1c4d38e3f488)
 
+
+Per realizzare questo piccolo applicativo ho preso spunto da qui https://github.com/protti/ScraperFantacalcio/tree/master 
