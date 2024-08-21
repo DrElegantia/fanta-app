@@ -6,7 +6,7 @@ import os
 st.set_page_config(layout="wide")
 
 # Carica i dati dal CSV
-df = pd.read_csv('/Users/umbertobertonelli/PycharmProjects/pythonProject4/dati_uniti.csv')
+df = pd.read_csv('/dati_uniti.csv')
 df = df.rename(columns={"Squadra_csv": "Squadra"})
 df = df.rename(columns={"Nome_csv": "Nome"})
 # Calcoliamo la mediana della colonna 'Qt.A'
