@@ -2,6 +2,7 @@ import streamlit as st
 import pandas as pd
 import plotly.graph_objects as go
 import os
+from statistics import mean
 
 st.set_page_config(layout="wide")
 
@@ -360,6 +361,9 @@ if 'fig' in locals() and fig is not None:
     st.plotly_chart(fig)
 st.divider()
 
+# Verifica e crea la colonna 'AcquistatoDa' se non esiste
+if 'AcquistatoDa' not in df.columns:
+    df['AcquistatoDa'] = None
 
 # Verifica e crea la colonna 'AcquistatoDa' se non esiste
 if 'AcquistatoDa' not in df.columns:
@@ -381,7 +385,7 @@ with col1:
     st.header('Input Fantallenatori')
     with st.expander("Nome fantallenatori"):
         for i in range(1, numero_giocatori + 1):
-            nome_fantallenatore = st.text_input(f'Nome del Fantallenatore {i}', value=f'Fantallenatore {i}')
+            nome_fantallenatore = st.text_input(f'Nome del Fantallenatore {i}', value=f'Fantallenatore {i}', key=f'nome_{i}')
             fantallenatori[f'Fantallenatore {i}'] = nome_fantallenatore
 
 with col2:
@@ -397,24 +401,31 @@ with col2:
             col1, col2 = st.columns(2)
 
             with col1:
-                # Imposta il prezzo per il calciatore
-                prezzo = st.number_input(f'Prezzo di {calciatore}', min_value=1, value=1, key=f'prezzo_{calciatore}')
-                # Seleziona il fantallenatore che ha acquistato il calciatore
-                fantallenatore_acquisto = st.selectbox(
-                    f'Seleziona il fantallenatore per {calciatore}',
-                    options=[fantallenatori[f'Fantallenatore {i}'] for i in range(1, numero_giocatori + 1)],
-                    key=f'fantallenatore_{calciatore}'
-                )
-                if fantallenatore_acquisto not in prezzi:
-                    prezzi[fantallenatore_acquisto] = {}
-                prezzi[fantallenatore_acquisto][calciatore] = prezzo
-                rose[fantallenatore_acquisto].append({
-                    'Nome': calciatore,
-                    'Prezzo': prezzo
-                })
+                with st.expander(f"{calciatore}"):
+                    # Imposta il prezzo per il calciatore
+                    prezzo = st.number_input(f'Prezzo di {calciatore}', min_value=1, value=1, key=f'prezzo_{calciatore}')
+                    # Seleziona il fantallenatore che ha acquistato il calciatore
+                    fantallenatore_acquisto = st.selectbox(
+                        f'Seleziona il fantallenatore per {calciatore}',
+                        options=[fantallenatori[f'Fantallenatore {i}'] for i in range(1, numero_giocatori + 1)],
+                        key=f'fantallenatore_{calciatore}'
+                    )
 
-            # Aggiorna il DataFrame
-            df.loc[df['Nome'] == calciatore, 'AcquistatoDa'] = fantallenatore_acquisto
+                    # Trova la chiave corrispondente a 'fantallenatore_acquisto'
+                    fantallenatore_key = next(
+                        (key for key, value in fantallenatori.items() if value == fantallenatore_acquisto), None)
+
+                    if fantallenatore_key:
+                        if fantallenatore_key not in prezzi:
+                            prezzi[fantallenatore_key] = {}
+                        prezzi[fantallenatore_key][calciatore] = prezzo
+                        rose[fantallenatore_key].append({
+                            'Nome': calciatore,
+                            'Prezzo': prezzo,
+                            'Punteggio FantaCalcioPedia': df.loc[df['Nome'] == calciatore, 'Punteggio FantaCalcioPedia'].values[0]  # Aggiungi la Fanta media
+                        })
+                        # Aggiorna il DataFrame
+                        df.loc[df['Nome'] == calciatore, 'AcquistatoDa'] = fantallenatore_acquisto
 
     # Pulsante per salvare i dati
     if st.button('Salva'):
@@ -429,6 +440,9 @@ with st.expander("Rose dei Fantallenatori"):
         if rose[f'Fantallenatore {i}']:
             df_rosa = pd.DataFrame(rose[f'Fantallenatore {i}'])
             st.write(f"Totale Speso: {sum(item['Prezzo'] for item in rose[f'Fantallenatore {i}'])} crediti")
+            st.write(f"Budget rimanente: {budget-sum(item['Prezzo'] for item in rose[f'Fantallenatore {i}'])} crediti")
+            st.write(
+                f"Media Fantacalcio Pedia della Rosa: {mean(item['Punteggio FantaCalcioPedia'] for item in rose[f'Fantallenatore {i}'])}")
             st.table(df_rosa)
         else:
             st.write("Nessun acquisto effettuato.")
