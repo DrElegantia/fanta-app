@@ -7,6 +7,10 @@ st.set_page_config(layout="wide")
 
 # Carica i dati dal CSV
 df = pd.read_csv('/dati_uniti.csv')
+df['Punteggio FantaCalcioPedia'] = pd.to_numeric(df['Punteggio FantaCalcioPedia'], errors='coerce')
+df['Solidità fantainvestimento'] = pd.to_numeric(df['Solidità fantainvestimento'], errors='coerce')
+df['Resistenza infortuni'] = pd.to_numeric(df['Resistenza infortuni'], errors='coerce')
+
 df = df.rename(columns={"Squadra_csv": "Squadra"})
 df = df.rename(columns={"Nome_csv": "Nome"})
 # Calcoliamo la mediana della colonna 'Qt.A'
@@ -24,7 +28,7 @@ def sostituisci_nan_per_ruolo(df, colonna, colonna_ruolo):
         df.loc[filtro & df[colonna].isna(), colonna] = mediana
 
 
-
+# Applichiamo la funzione al nostro DataFrame
 sostituisci_nan_per_ruolo(df, 'Qt.A', 'Ruolo')
 columns_to_combine = [
     "Ultimi Arrivi", "In Crescita", "Rischiosi", "Fuoriclasse", "Outsider",
@@ -33,6 +37,7 @@ columns_to_combine = [
 ]
 df["Attributi"] = df[columns_to_combine].apply(
     lambda row: '-'.join(filter(None, [str(x) for x in row if pd.notna(x)])), axis=1)
+
 # Funzione per estrarre il numero1
 def estrai_numero1(val):
     if isinstance(val, str):
@@ -42,9 +47,14 @@ def estrai_numero1(val):
         # Se la stringa contiene un '+', prendi la parte dopo il '+'
         elif '+' in val:
             return int(val.replace('+', ''))
-        # Altrimenti, convertilo semplicemente in intero
+        # Tenta di convertire la stringa in un intero, se possibile
         else:
-            return int(val)
+            try:
+                return int(val)
+            except ValueError:
+                # Se la conversione fallisce, restituisci None o un valore di default
+                return None
+    # Se il valore non è una stringa, restituiscilo così com'è
     return val
 
 # Applicare la funzione alle colonne interessate
@@ -52,6 +62,8 @@ df["Gol previsti"] = df["Gol previsti"].apply(estrai_numero1)
 df["Presenze previste"] = df["Presenze previste"].apply(estrai_numero1)
 df["Assist previsti"] = df["Assist previsti"].apply(estrai_numero1)
 df.loc[df['Ruolo'] == 'P', 'Gol previsti'] *= -1
+
+
 # Nome del file CSV per i giocatori papabili
 papabili_file = 'papabili_players.csv'
 
@@ -107,7 +119,7 @@ with st.expander("Giocatori Papabili"):
 
         st.success("Giocatori papabili salvati con successo!")
         for ruolo in papabili_data_view["Ruolo"].unique():
-            st.table(papabili_data_view[papabili_data_view["Ruolo"] == ruolo])
+            st.table(papabili_data_view[papabili_data_view["Ruolo"] == ruolo].sort_values("Punteggio FantaCalcioPedia", ascending=False))
 
 # Sezione Obiettivi
 with st.expander("Obiettivi"):
@@ -207,7 +219,10 @@ with st.expander("Obiettivi"):
 
             st.table(modulo_selezionato.set_index('Nome',drop=True))
             st.write("Formazione completa:")
-            st.table(pd.DataFrame(selected_data[['Nome', 'Ruolo', 'Punteggio FantaCalcioPedia',"Attributi", "Gol previsti", "Presenze previste", "Assist previsti",'Prezzo']]).set_index('Nome', drop=True))
+            selected_data['Status'] = selected_data['Nome'].apply(
+                lambda x: 'titolare' if x in modulo_players['Nome'].values else 'panchinaro'
+            )
+            st.table(pd.DataFrame(selected_data[['Nome', 'Ruolo', 'Punteggio FantaCalcioPedia',"Attributi", "Gol previsti", "Presenze previste", "Assist previsti",'Prezzo', 'Status']].sort_values('Prezzo', ascending=False)).set_index('Nome', drop=True))
         else:
             st.write("Seleziona un modulo per calcolare la fantamedia.")
 
@@ -239,8 +254,26 @@ with col3:
     selected_ruolo = st.selectbox('Seleziona un ruolo', ruolo_list)
 
     if selected_ruolo:
-        available_players = df[df['Ruolo'] == selected_ruolo]['Nome'].unique().tolist()
+        # Creare la lista di attributi unici senza duplicati
+        lista_attributi = list(set('-'.join(df['Attributi']).split('-')))
+
+        # Permettere la selezione di un attributo dalla lista (opzionale)
+        Attributi = st.selectbox('Seleziona un attributo (opzionale)', lista_attributi)
+
+        # Filtrare i giocatori in base al ruolo selezionato
+        df_filtrato = df[df['Ruolo'] == selected_ruolo]
+
+        # Se un attributo è stato selezionato, filtrare ulteriormente in base all'attributo
+        if Attributi:
+            df_filtrato = df_filtrato[df_filtrato['Attributi'].str.contains(Attributi)]
+
+        # Ottenere la lista unica di giocatori filtrati
+        available_players = df_filtrato['Nome'].unique().tolist()
+
+        # Permettere la selezione di uno o più giocatori dalla lista filtrata
         selected_players = st.multiselect('Seleziona uno o più giocatori', available_players)
+
+
 
     if selected_players:
         with col4:
@@ -257,6 +290,7 @@ with col3:
                     player_data["Presenze previste"],
                     player_data["Assist previsti"]
                 ]
+                skill_values = pd.to_numeric(skill_values, errors='coerce')
                 skill_names = [
                     'ALG FCP',
                     'Punteggio FantaCalcioPedia',
@@ -325,57 +359,101 @@ st.divider()
 if 'fig' in locals() and fig is not None:
     st.plotly_chart(fig)
 st.divider()
-# Inizializza una lista per tenere traccia dei giocatori acquistati
-acquistati = set()
 
-# Sezione per definire il numero di avversari e modificarne i nomi
+
+if 'AcquistatoDa' not in df.columns:
+    df['AcquistatoDa'] = None
+
+# Richiedi il numero di fantallenatori
 numero_giocatori = st.number_input("Numero di avversari (incluso te stesso)", min_value=2, value=5, step=1)
 numero_giocatori = int(numero_giocatori)
 
+# Dizionari per gestire lo stato degli acquisti e le selezioni
+fantallenatori = {}
+selezioni = {}
+stato_acquisto = {}
+acquirente = {}
+
+# Colonne dell'interfaccia
 col1, col2 = st.columns([1, 2])
 
 with col1:
     st.header('Input Fantallenatori')
     with st.expander("Nome fantallenatori"):
-        fantallenatori = {}
         for i in range(1, numero_giocatori + 1):
             nome_fantallenatore = st.text_input(f'Nome del Fantallenatore {i}', value=f'Fantallenatore {i}')
             fantallenatori[f'Giocatore {i}'] = nome_fantallenatore
+            # Inizializza le selezioni
+            selezioni[f'Giocatore {i}'] = set()
+            stato_acquisto[f'Giocatore {i}'] = {}
+            acquirente[f'Giocatore {i}'] = {}
 
     st.header('Formazioni e Budget Speso')
     teams = {}
     for i in range(1, numero_giocatori + 1):
         st.subheader(f'{fantallenatori[f"Giocatore {i}"]}')
         with st.expander(f'Acquisti {fantallenatori[f"Giocatore {i}"]}'):
-            available_players = [p for p in df['Nome'].unique().tolist() if p not in acquistati]
-            giocatori_acquistati = st.multiselect(f'Seleziona i calciatori per {fantallenatori[f"Giocatore {i}"]}',
-                                                  available_players)
+            # Trova i giocatori disponibili per l'acquisto
+            giocatori_disponibili = df[df['AcquistatoDa'].isna()]['Nome'].tolist()
+            giocatori_acquistati = st.multiselect(
+                f'Seleziona i calciatori per {fantallenatori[f"Giocatore {i}"]}',
+                giocatori_disponibili,
+                default=list(selezioni[f'Giocatore {i}'])
+            )
 
+            # Trova nuovi acquisti e giocatori rimossi
+            nuovi_acquisti = set(giocatori_acquistati) - selezioni[f'Giocatore {i}']
+            rimossi_giocatori = selezioni[f'Giocatore {i}'] - set(giocatori_acquistati)
+
+            # Aggiorna lo stato di acquisto e l'acquirente
+            for giocatore in nuovi_acquisti:
+                stato_acquisto[f'Giocatore {i}'][giocatore] = True
+                acquirente[f'Giocatore {i}'][giocatore] = fantallenatori[f'Giocatore {i}']
+                df.loc[df['Nome'] == giocatore, 'AcquistatoDa'] = fantallenatori[f'Giocatore {i}']
+
+            for giocatore in rimossi_giocatori:
+                stato_acquisto[f'Giocatore {i}'][giocatore] = False
+                acquirente[f'Giocatore {i}'][giocatore] = None
+                df.loc[df['Nome'] == giocatore, 'AcquistatoDa'] = None
+
+            selezioni[f'Giocatore {i}'] = set(giocatori_acquistati)
+
+            # Calcola il totale speso e i dati della squadra
             totale_speso = 0
             squadra = []
 
             for giocatore in giocatori_acquistati:
-                prezzo = st.number_input(f'Prezzo di {giocatore} ({fantallenatori[f"Giocatore {i}"]})', min_value=1,
-                                         value=1)
+                prezzo = st.number_input(f'Prezzo di {giocatore} ({fantallenatori[f"Giocatore {i}"]})', min_value=1, value=1)
                 totale_speso += prezzo
                 ruolo = df.loc[df.Nome == giocatore, 'Ruolo'].values[0]
                 fanta_media = df.loc[df.Nome == giocatore, 'Punteggio FantaCalcioPedia'].values[0]
                 goal_previsti = df.loc[df.Nome == giocatore, 'Gol previsti'].values[0]
                 assist_previsti = df.loc[df.Nome == giocatore, 'Assist previsti'].values[0]
                 attributi = df.loc[df.Nome == giocatore, 'Attributi'].values[0]
-                squadra.append({'Nome': giocatore, 'Prezzo': prezzo, 'Ruolo': ruolo, 'FantaMedia': fanta_media, 'Gol previsti':goal_previsti, 'Assist previsti':assist_previsti,'Attributi':attributi})
-
-                # Aggiungi il giocatore alla lista degli acquistati
-                acquistati.add(giocatore)
+                squadra.append({
+                    'Nome': giocatore,
+                    'Prezzo': prezzo,
+                    'Ruolo': ruolo,
+                    'FantaMedia': fanta_media,
+                    'Gol previsti': goal_previsti,
+                    'Assist previsti': assist_previsti,
+                    'Attributi': attributi
+                })
 
             budget_rimanente = budget - totale_speso
-            teams[f'Giocatore {i}'] = {'Squadra': squadra, 'Totale Speso': totale_speso,
-                                       'Budget Rimanente': budget_rimanente,
-                                       'FantaMedia': sum(player['FantaMedia'] for player in squadra) / len(
-                                           squadra) if len(squadra) != 0 else 0,
-                                       'Goal previsti': sum(player['Gol previsti'] for player in squadra) / len(
-                                           squadra) if len(squadra) != 0 else 0
-                                       }
+            teams[f'Giocatore {i}'] = {
+                'Squadra': squadra,
+                'Totale Speso': totale_speso,
+                'Budget Rimanente': budget_rimanente,
+                'FantaMedia': sum(player['FantaMedia'] for player in squadra) / len(squadra) if len(squadra) > 0 else 0,
+                'Goal previsti': sum(player['Gol previsti'] for player in squadra) / len(squadra) if len(squadra) > 0 else 0
+            }
+
+# Aggiungi un pulsante per il salvataggio
+if st.button('Salva'):
+    df.to_csv('acquisti_fantacalcio.csv', index=False)
+    st.success('Stato degli acquisti salvato con successo!')
+
 with col2:
     for giocatore, dati in teams.items():
         df_squadra = pd.DataFrame(dati['Squadra'])
@@ -383,5 +461,5 @@ with col2:
         st.write(f"Totale Speso: {dati['Totale Speso']} crediti")
         st.write(f"Budget Rimanente: {dati['Budget Rimanente']} crediti")
         st.write(f"FantaMedia team intero: {dati['FantaMedia']:.2f} punti")
-        st.write(f"Gaol previsti team intero: {dati['Goal previsti']/36:.2f} punti")
+        st.write(f"Goal previsti team intero: {dati['Goal previsti']:.2f} punti")
         st.table(df_squadra)
