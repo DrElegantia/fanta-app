@@ -361,6 +361,7 @@ if 'fig' in locals() and fig is not None:
 st.divider()
 
 
+# Verifica e crea la colonna 'AcquistatoDa' se non esiste
 if 'AcquistatoDa' not in df.columns:
     df['AcquistatoDa'] = None
 
@@ -368,98 +369,69 @@ if 'AcquistatoDa' not in df.columns:
 numero_giocatori = st.number_input("Numero di avversari (incluso te stesso)", min_value=2, value=5, step=1)
 numero_giocatori = int(numero_giocatori)
 
-# Dizionari per gestire lo stato degli acquisti e le selezioni
+# Dizionari per gestire le rose e gli acquisti
 fantallenatori = {}
-selezioni = {}
-stato_acquisto = {}
-acquirente = {}
+rose = {f'Fantallenatore {i}': [] for i in range(1, numero_giocatori + 1)}
+prezzi = {f'Fantallenatore {i}': {} for i in range(1, numero_giocatori + 1)}
 
 # Colonne dell'interfaccia
-col1, col2 = st.columns([1, 2])
+col1, col2 = st.columns([1, 1])
 
 with col1:
     st.header('Input Fantallenatori')
     with st.expander("Nome fantallenatori"):
         for i in range(1, numero_giocatori + 1):
             nome_fantallenatore = st.text_input(f'Nome del Fantallenatore {i}', value=f'Fantallenatore {i}')
-            fantallenatori[f'Giocatore {i}'] = nome_fantallenatore
-            # Inizializza le selezioni
-            selezioni[f'Giocatore {i}'] = set()
-            stato_acquisto[f'Giocatore {i}'] = {}
-            acquirente[f'Giocatore {i}'] = {}
-
-    st.header('Formazioni e Budget Speso')
-    teams = {}
-    for i in range(1, numero_giocatori + 1):
-        st.subheader(f'{fantallenatori[f"Giocatore {i}"]}')
-        with st.expander(f'Acquisti {fantallenatori[f"Giocatore {i}"]}'):
-            # Trova i giocatori disponibili per l'acquisto
-            giocatori_disponibili = df[df['AcquistatoDa'].isna()]['Nome'].tolist()
-            giocatori_acquistati = st.multiselect(
-                f'Seleziona i calciatori per {fantallenatori[f"Giocatore {i}"]}',
-                giocatori_disponibili,
-                default=list(selezioni[f'Giocatore {i}'])
-            )
-
-            # Trova nuovi acquisti e giocatori rimossi
-            nuovi_acquisti = set(giocatori_acquistati) - selezioni[f'Giocatore {i}']
-            rimossi_giocatori = selezioni[f'Giocatore {i}'] - set(giocatori_acquistati)
-
-            # Aggiorna lo stato di acquisto e l'acquirente
-            for giocatore in nuovi_acquisti:
-                stato_acquisto[f'Giocatore {i}'][giocatore] = True
-                acquirente[f'Giocatore {i}'][giocatore] = fantallenatori[f'Giocatore {i}']
-                df.loc[df['Nome'] == giocatore, 'AcquistatoDa'] = fantallenatori[f'Giocatore {i}']
-
-            for giocatore in rimossi_giocatori:
-                stato_acquisto[f'Giocatore {i}'][giocatore] = False
-                acquirente[f'Giocatore {i}'][giocatore] = None
-                df.loc[df['Nome'] == giocatore, 'AcquistatoDa'] = None
-
-            selezioni[f'Giocatore {i}'] = set(giocatori_acquistati)
-
-            # Calcola il totale speso e i dati della squadra
-            totale_speso = 0
-            squadra = []
-
-            for giocatore in giocatori_acquistati:
-                prezzo = st.number_input(f'Prezzo di {giocatore} ({fantallenatori[f"Giocatore {i}"]})', min_value=1, value=1)
-                totale_speso += prezzo
-                ruolo = df.loc[df.Nome == giocatore, 'Ruolo'].values[0]
-                fanta_media = df.loc[df.Nome == giocatore, 'Punteggio FantaCalcioPedia'].values[0]
-                goal_previsti = df.loc[df.Nome == giocatore, 'Gol previsti'].values[0]
-                assist_previsti = df.loc[df.Nome == giocatore, 'Assist previsti'].values[0]
-                attributi = df.loc[df.Nome == giocatore, 'Attributi'].values[0]
-                squadra.append({
-                    'Nome': giocatore,
-                    'Prezzo': prezzo,
-                    'Ruolo': ruolo,
-                    'FantaMedia': fanta_media,
-                    'Gol previsti': goal_previsti,
-                    'Assist previsti': assist_previsti,
-                    'Attributi': attributi
-                })
-
-            budget_rimanente = budget - totale_speso
-            teams[f'Giocatore {i}'] = {
-                'Squadra': squadra,
-                'Totale Speso': totale_speso,
-                'Budget Rimanente': budget_rimanente,
-                'FantaMedia': sum(player['FantaMedia'] for player in squadra) / len(squadra) if len(squadra) > 0 else 0,
-                'Goal previsti': sum(player['Gol previsti'] for player in squadra) / len(squadra) if len(squadra) > 0 else 0
-            }
-
-# Aggiungi un pulsante per il salvataggio
-if st.button('Salva'):
-    df.to_csv('acquisti_fantacalcio.csv', index=False)
-    st.success('Stato degli acquisti salvato con successo!')
+            fantallenatori[f'Fantallenatore {i}'] = nome_fantallenatore
 
 with col2:
-    for giocatore, dati in teams.items():
-        df_squadra = pd.DataFrame(dati['Squadra'])
-        st.subheader(fantallenatori[giocatore])
-        st.write(f"Totale Speso: {dati['Totale Speso']} crediti")
-        st.write(f"Budget Rimanente: {dati['Budget Rimanente']} crediti")
-        st.write(f"FantaMedia team intero: {dati['FantaMedia']:.2f} punti")
-        st.write(f"Goal previsti team intero: {dati['Goal previsti']:.2f} punti")
-        st.table(df_squadra)
+    st.header('Gestione Acquisti')
+    st.subheader('Seleziona i calciatori e imposta il prezzo e l\'allenatore')
+
+    # Selezione dei calciatori disponibili
+    giocatori_disponibili = df[df['AcquistatoDa'].isna()]['Nome'].tolist()
+    calciatori_selezionati = st.multiselect('Seleziona i calciatori', giocatori_disponibili)
+
+    if calciatori_selezionati:
+        for calciatore in calciatori_selezionati:
+            col1, col2 = st.columns(2)
+
+            with col1:
+                # Imposta il prezzo per il calciatore
+                prezzo = st.number_input(f'Prezzo di {calciatore}', min_value=1, value=1, key=f'prezzo_{calciatore}')
+                # Seleziona il fantallenatore che ha acquistato il calciatore
+                fantallenatore_acquisto = st.selectbox(
+                    f'Seleziona il fantallenatore per {calciatore}',
+                    options=[fantallenatori[f'Fantallenatore {i}'] for i in range(1, numero_giocatori + 1)],
+                    key=f'fantallenatore_{calciatore}'
+                )
+                if fantallenatore_acquisto not in prezzi:
+                    prezzi[fantallenatore_acquisto] = {}
+                prezzi[fantallenatore_acquisto][calciatore] = prezzo
+                rose[fantallenatore_acquisto].append({
+                    'Nome': calciatore,
+                    'Prezzo': prezzo
+                })
+
+            # Aggiorna il DataFrame
+            df.loc[df['Nome'] == calciatore, 'AcquistatoDa'] = fantallenatore_acquisto
+
+    # Pulsante per salvare i dati
+    if st.button('Salva'):
+        df.to_csv('acquisti_fantacalcio.csv', index=False)
+        st.success('Stato degli acquisti salvato con successo!')
+
+with st.expander("Rose dei Fantallenatori"):
+    st.header('Rose dei Fantallenatori')
+    for i in range(1, numero_giocatori + 1):
+        fantallenatore = fantallenatori[f'Fantallenatore {i}']
+        st.subheader(fantallenatore)
+        if rose[f'Fantallenatore {i}']:
+            df_rosa = pd.DataFrame(rose[f'Fantallenatore {i}'])
+            st.write(f"Totale Speso: {sum(item['Prezzo'] for item in rose[f'Fantallenatore {i}'])} crediti")
+            st.table(df_rosa)
+        else:
+            st.write("Nessun acquisto effettuato.")
+
+
+
