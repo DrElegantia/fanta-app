@@ -220,8 +220,11 @@ if not df.empty:
 else:
     st.warning("Nessun dato disponibile per la visualizzazione.")
 
+# Carica i dati dei calciatori
+
+
 st.header('Gestione Fasce')
-with st.expander(f"Seleziona i calciatori e imposta la fascia"):
+with st.expander("Seleziona i calciatori e imposta la fascia"):
     st.subheader('Seleziona i calciatori e imposta la fascia')
 
     fasce_df = df.copy()
@@ -248,8 +251,18 @@ with st.expander(f"Seleziona i calciatori e imposta la fascia"):
             # Crea un DataFrame con le informazioni dei calciatori e le loro fasce
             fasce_df_selezionati = pd.DataFrame(list(fasce_selezionate.items()), columns=['Nome', 'Fascia'])
 
-            # Salva il DataFrame in un file CSV
-            fasce_df_selezionati.to_csv('fasce_calciatori.csv', index=False)
+            # Controlla se il file CSV esiste già
+            if os.path.exists('fasce_calciatori.csv'):
+                # Leggi il CSV esistente
+                fasce_df_esistente = pd.read_csv('fasce_calciatori.csv')
+
+                # Aggiorna le righe esistenti o aggiungi nuove righe
+                fasce_df_aggiornato = pd.concat([fasce_df_esistente, fasce_df_selezionati]).drop_duplicates(subset='Nome', keep='last')
+            else:
+                fasce_df_aggiornato = fasce_df_selezionati
+
+            # Salva il DataFrame aggiornato nel file CSV
+            fasce_df_aggiornato.to_csv('fasce_calciatori.csv', index=False)
             st.success('Le fasce dei calciatori sono state salvate con successo!')
         else:
             st.warning('Nessun calciatore selezionato.')
