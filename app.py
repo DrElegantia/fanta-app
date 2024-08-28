@@ -7,7 +7,7 @@ from statistics import mean
 st.set_page_config(layout="wide")
 
 # Carica i dati dal CSV
-df = pd.read_csv('/dati_uniti.csv')
+df = pd.read_csv('dati_uniti.csv')
 df['Punteggio FantaCalcioPedia'] = pd.to_numeric(df['Punteggio FantaCalcioPedia'], errors='coerce')
 df['Solidità fantainvestimento'] = pd.to_numeric(df['Solidità fantainvestimento'], errors='coerce')
 df['Resistenza infortuni'] = pd.to_numeric(df['Resistenza infortuni'], errors='coerce')
@@ -78,6 +78,7 @@ else:
 # Crea una lista dei ruoli
 ruolo_list = df['Ruolo'].unique().tolist()
 
+
 # Titolo dell'applicazione
 st.title('Fanta 24-25')
 
@@ -87,43 +88,204 @@ df['Prezzo'] = round((df['Punteggio FantaCalcioPedia'].max() / (budget / 25) *
                                       (df['Solidità fantainvestimento'] / 100) *
                                       (df['Resistenza infortuni'] / 100)) * (
                                                  df["Qt.A"] / df["Qt.A"].max()))
-# Sezione Papabili
-with st.expander("Giocatori Papabili"):
-    st.header("Seleziona i giocatori papabili")
-
-    # Seleziona i giocatori papabili e pre-seleziona quelli precedentemente salvati
-    selected_papabili_players = st.multiselect("Seleziona i giocatori papabili",
-                                               df['Nome'].tolist(),
-                                               default=previously_papabili_players)
-    df_view=df.copy()
-    df_view = df_view.rename(columns={"Squadra_x": "Squadra"})
-    df_view = df_view[["Nome", "Squadra", "Ruolo", "ALG FCP", "Punteggio FantaCalcioPedia", "Solidità fantainvestimento",
-         "Resistenza infortuni", "Qt.A", "Attributi", "Gol previsti", "Presenze previste", "Assist previsti", "Prezzo"]]
-
-    for ruoli in df_view.Ruolo.unique():
-        st.dataframe(df_view[df_view["Ruolo"] == ruoli].sort_values("Punteggio FantaCalcioPedia", ascending=False).set_index("Nome"))
-
-    # Salva i giocatori papabili selezionati nel file CSV
-    if st.button("Salva giocatori papabili"):
-        papabili_data = df[df['Nome'].isin(selected_papabili_players)]
-        papabili_data = papabili_data.rename(columns={"Squadra_x": "Squadra"})
-        papabili_data_view = papabili_data[
-            ["Nome", "Squadra", "Ruolo", "ALG FCP", "Punteggio FantaCalcioPedia", "Solidità fantainvestimento",
-             "Resistenza infortuni", "Qt.A", "Attributi", "Gol previsti", "Presenze previste", "Assist previsti", "Prezzo"]]
-        papabili_data_view['Prezzo']=round((df['Punteggio FantaCalcioPedia'].max() / (budget / 25) *
-                    papabili_data_view["Punteggio FantaCalcioPedia"] *
-                    (papabili_data_view['Solidità fantainvestimento'] / 100) *
-                    (papabili_data_view['Resistenza infortuni'] / 100)) * (papabili_data_view["Qt.A"] / df["Qt.A"].max()))
 
 
-        papabili_data.to_csv(papabili_file, index=False)
 
-        st.success("Giocatori papabili salvati con successo!")
-        for ruolo in papabili_data_view["Ruolo"].unique():
-            st.table(papabili_data_view[papabili_data_view["Ruolo"] == ruolo].sort_values("Punteggio FantaCalcioPedia", ascending=False))
+# Percorsi dei file CSV
+csv_fasce_file = 'fasce_prezzo.csv'
+csv_assegnazioni_file = 'assegnazioni_giocatori.csv'
+
+# Funzioni per caricare le fasce e le assegnazioni dal CSV
+def carica_fasce_da_csv():
+    if os.path.exists(csv_fasce_file):
+        df_fasce = pd.read_csv(csv_fasce_file)
+        return df_fasce['Fascia'].tolist() if 'Fascia' in df_fasce.columns else []
+    return []
+
+def carica_assegnazioni_da_csv():
+    if os.path.exists(csv_assegnazioni_file):
+        df_assegnazioni = pd.read_csv(csv_assegnazioni_file)
+        if 'Fascia' in df_assegnazioni.columns and 'Giocatori' in df_assegnazioni.columns:
+            assegnazioni = {}
+            for _, row in df_assegnazioni.iterrows():
+                # Converti i valori in stringa e gestisci i NaN
+                giocatori = str(row['Giocatori']) if pd.notna(row['Giocatori']) else ''
+                assegnazioni[row['Fascia']] = giocatori.split(';')
+            return assegnazioni
+    return {}
+
+# Carica fasce e assegnazioni dal CSV
+fasce_predefinite = carica_fasce_da_csv()
+assegnazioni_predefinite = carica_assegnazioni_da_csv()
+
+# Imposta le fasce e le assegnazioni predefinite se disponibili
+if fasce_predefinite:
+    st.session_state.fasce = fasce_predefinite
+if assegnazioni_predefinite:
+    st.session_state.assegnazioni = assegnazioni_predefinite
+
+# Sezione per definire o modificare le fasce di prezzo
+with st.expander("Definisci o Modifica le Fasce di Prezzo"):
+    st.header("Definisci le fasce di prezzo")
+
+    num_fasce = st.number_input("Numero di fasce", min_value=1, max_value=10, value=len(fasce_predefinite) or 3)
+    fasce = [st.text_input(f"Inserisci il nome della fascia {i + 1}",
+                           value=fasce_predefinite[i] if i < len(fasce_predefinite) else "", key=f"fascia_{i}")
+             for i in range(num_fasce)]
+
+    st.write("Fasce definite:")
+    for i, fascia in enumerate(fasce):
+        st.write(f"{i + 1}. {fascia}")
+
+    if st.button("Salva Fasce"):
+        st.session_state.fasce = fasce
+        df_fasce = pd.DataFrame(fasce, columns=['Fascia'])
+        df_fasce.to_csv(csv_fasce_file, index=False)
+        st.success("Fasce salvate con successo!")
+
+# Sezione per visualizzare giocatori per ruolo
+if not df.empty:
+    # Ottieni la lista unica degli attributi
+    attributi_unici = list(set('-'.join(df['Attributi'].dropna().astype(str)).split('-')))
+    attributi_unici.sort()
+
+    # Intestazione della sezione
+    st.header("Griglia Calciatori")
+
+    with st.expander("Apri per vedere la griglia"):
+        # Filtri per attributi
+        attributi_selezionati = st.multiselect(
+            "Filtra per attributi",
+            options=attributi_unici,
+            default=attributi_unici,
+            key="attributi_filtri"  # Chiave unica per attributi
+        )
+
+        ruoli_selezionati = st.multiselect(
+            "Filtra per ruolo",
+            options=ruolo_list,
+            default=ruolo_list,
+            key="ruoli_filtri"  # Chiave unica per ruoli
+        )
+
+        # Filtra il DataFrame in base agli attributi selezionati
+        if attributi_selezionati:
+            df_filtrato = df[
+                df['Attributi'].apply(lambda x: any(attr in attributi_selezionati for attr in str(x).split('-')))
+            ]
+        else:
+            df_filtrato = df.copy()
+
+        # Filtra il DataFrame in base ai ruoli selezionati
+        if ruoli_selezionati:
+            df_filtrato = df_filtrato[
+                df_filtrato['Ruolo'].isin(ruoli_selezionati)
+            ]
+
+        # Filtri per squadra
+        squadra_selezionata = st.selectbox(
+            "Filtra per squadra",
+            options=['Tutti'] + list(df_filtrato['Squadra'].unique()),
+            key="squadra_filtri"  # Chiave unica per squadra
+        )
+
+        if squadra_selezionata != 'Tutti':
+            df_filtrato = df_filtrato[df_filtrato['Squadra'] == squadra_selezionata]
+
+        # Opzioni di ordinamento
+        ordinamento = st.selectbox(
+            "Ordina per",
+            options=[
+                "Punteggio FantaCalcioPedia (Ascendente)",
+                "Punteggio FantaCalcioPedia (Discendente)",
+                "Prezzo (Ascendente)",
+                "Prezzo (Discendente)"
+            ],
+            key="ordinamento_filtri"  # Chiave unica per ordinamento
+        )
+
+        if ordinamento == "Punteggio FantaCalcioPedia (Ascendente)":
+            df_filtrato = df_filtrato.sort_values("Punteggio FantaCalcioPedia")
+        elif ordinamento == "Punteggio FantaCalcioPedia (Discendente)":
+            df_filtrato = df_filtrato.sort_values("Punteggio FantaCalcioPedia", ascending=False)
+        elif ordinamento == "Prezzo (Ascendente)":
+            df_filtrato = df_filtrato.sort_values("Prezzo")
+        elif ordinamento == "Prezzo (Discendente)":
+            df_filtrato = df_filtrato.sort_values("Prezzo", ascending=False)
+
+        # Mostra il DataFrame filtrato e ordinato
+        st.dataframe(df_filtrato[["Nome", "Squadra", "Ruolo", "ALG FCP", "Punteggio FantaCalcioPedia",
+                                  "Solidità fantainvestimento", "Resistenza infortuni", "Qt.A", "Attributi",
+                                  "Gol previsti", "Presenze previste", "Assist previsti", "Prezzo"]])
+else:
+    st.warning("Nessun dato disponibile per la visualizzazione.")
+
+st.header('Gestione Fasce')
+with st.expander(f"Seleziona i calciatori e imposta la fascia"):
+    st.subheader('Seleziona i calciatori e imposta la fascia')
+
+    fasce_df = df.copy()
+    fasce_df['fasce'] = None
+
+    # Selezione dei calciatori disponibili
+    giocatori_fasce_disponibili = fasce_df[fasce_df['fasce'].isna()]['Nome'].tolist()
+    calciatori_fasce_selezionati = st.multiselect('Seleziona i calciatori da assegnare alle fasce', giocatori_fasce_disponibili)
+
+    fasce_selezionate = {}
+
+    if calciatori_fasce_selezionati:
+        for calciatore in calciatori_fasce_selezionati:
+            col1, col2 = st.columns(2)
+
+            with col1:
+                # Imposta la fascia per il calciatore
+                fascia = st.selectbox(f'Fascia di {calciatore}', options=fasce)
+                fasce_selezionate[calciatore] = fascia
+
+    # Bottone per salvare le informazioni
+    if st.button('Salva Selezione Fasce'):
+        if fasce_selezionate:
+            # Crea un DataFrame con le informazioni dei calciatori e le loro fasce
+            fasce_df_selezionati = pd.DataFrame(list(fasce_selezionate.items()), columns=['Nome', 'Fascia'])
+
+            # Salva il DataFrame in un file CSV
+            fasce_df_selezionati.to_csv('fasce_calciatori.csv', index=False)
+            st.success('Le fasce dei calciatori sono state salvate con successo!')
+        else:
+            st.warning('Nessun calciatore selezionato.')
+
+with st.expander(f"Griglia fasce"):
+    st.subheader('Griglia dei calciatori assegnati alle fasce')
+    # Percorso del file CSV
+    file_path = 'fasce_calciatori.csv'
+
+    # Verifica se il file esiste
+    if not os.path.isfile(file_path):
+        print("Nessuna selezione")
+    else:
+        # Se il file esiste, crea un DataFrame
+        fasce_selezionate = pd.read_csv(file_path)
+        fasce_selezionate_op=fasce_selezionate.merge(df,on='Nome')[["Nome", "Squadra", "Ruolo", "ALG FCP", "Punteggio FantaCalcioPedia",
+                                  "Solidità fantainvestimento", "Resistenza infortuni", "Qt.A", "Attributi",
+                                  "Gol previsti", "Presenze previste", "Assist previsti", "Prezzo",'Fascia']]
+
+        # Mostra le prime righe del DataFrame (opzionale)
+        for ruoli_for in fasce_selezionate_op['Ruolo'].unique():
+            st.write(f'Ruolo {ruoli_for}')
+            fasce_selezionate_op_1=fasce_selezionate_op[fasce_selezionate_op['Ruolo'] == ruoli_for]
+            for fascia_for in fasce_selezionate_op_1['Fascia'].unique():
+                st.write(f'Fascia: {fascia_for}')
+                st.dataframe(fasce_selezionate_op_1[fasce_selezionate_op_1['Fascia']==fascia_for])
+
+
+
+
+
+
+
 
 # Sezione Obiettivi
-with st.expander("Obiettivi"):
+with st.expander("Simulazione Rosa"):
     col7, col8 = st.columns([1, 1])
 
     # Nome del file CSV per i giocatori selezionati
@@ -252,27 +414,28 @@ with col3:
         range_centrocampisti = st.number_input("Range Centrocampisti", value=0.15)
         range_attaccanti = st.number_input("Range Attaccanti", value=0.20)
 
-    selected_ruolo = st.selectbox('Seleziona un ruolo', ruolo_list)
+    selected_ruolo = st.selectbox('Seleziona un ruolo (opzionale)', [''] + ruolo_list)
+    # Creare la lista di attributi unici senza duplicati
+    lista_attributi = list(set('-'.join(df['Attributi']).split('-')))
+
+    # Permettere la selezione di un attributo dalla lista (opzionale)
+    Attributi = st.selectbox('Seleziona un attributo (opzionale)', lista_attributi)
+
+    # Iniziare il filtraggio dal DataFrame originale
+    df_filtrato = df.copy()
 
     if selected_ruolo:
-        # Creare la lista di attributi unici senza duplicati
-        lista_attributi = list(set('-'.join(df['Attributi']).split('-')))
+        df_filtrato = df_filtrato[df_filtrato['Ruolo'].str.contains(selected_ruolo)]
 
-        # Permettere la selezione di un attributo dalla lista (opzionale)
-        Attributi = st.selectbox('Seleziona un attributo (opzionale)', lista_attributi)
+    # Filtrare in base all'attributo selezionato se è stato scelto
+    if Attributi:
+        df_filtrato = df_filtrato[df_filtrato['Attributi'].str.contains(Attributi)]
 
-        # Filtrare i giocatori in base al ruolo selezionato
-        df_filtrato = df[df['Ruolo'] == selected_ruolo]
+    # Ottenere la lista unica di giocatori filtrati
+    available_players = df_filtrato['Nome'].unique().tolist()
 
-        # Se un attributo è stato selezionato, filtrare ulteriormente in base all'attributo
-        if Attributi:
-            df_filtrato = df_filtrato[df_filtrato['Attributi'].str.contains(Attributi)]
-
-        # Ottenere la lista unica di giocatori filtrati
-        available_players = df_filtrato['Nome'].unique().tolist()
-
-        # Permettere la selezione di uno o più giocatori dalla lista filtrata
-        selected_players = st.multiselect('Seleziona uno o più giocatori', available_players)
+    # Permettere la selezione di uno o più giocatori dalla lista filtrata
+    selected_players = st.multiselect('Seleziona uno o più giocatori', available_players)
 
 
 
