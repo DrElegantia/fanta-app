@@ -8,6 +8,7 @@ st.set_page_config(layout="wide")
 
 # Carica i dati dal CSV
 df = pd.read_csv('dati_uniti.csv')
+df=df[df['Ruolo']!='Ruolo']
 df['Punteggio FantaCalcioPedia'] = pd.to_numeric(df['Punteggio FantaCalcioPedia'], errors='coerce')
 df['Solidità fantainvestimento'] = pd.to_numeric(df['Solidità fantainvestimento'], errors='coerce')
 df['Resistenza infortuni'] = pd.to_numeric(df['Resistenza infortuni'], errors='coerce')
@@ -282,13 +283,35 @@ with st.expander(f"Griglia fasce"):
                                   "Solidità fantainvestimento", "Resistenza infortuni", "Qt.A", "Attributi",
                                   "Gol previsti", "Presenze previste", "Assist previsti", "Prezzo",'Fascia']]
 
-        # Mostra le prime righe del DataFrame (opzionale)
-        for ruoli_for in fasce_selezionate_op['Ruolo'].unique():
-            st.write(f'Ruolo {ruoli_for}')
-            fasce_selezionate_op_1=fasce_selezionate_op[fasce_selezionate_op['Ruolo'] == ruoli_for]
-            for fascia_for in fasce_selezionate_op_1['Fascia'].unique():
-                st.write(f'Fascia: {fascia_for}')
-                st.dataframe(fasce_selezionate_op_1[fasce_selezionate_op_1['Fascia']==fascia_for])
+        ruoli_filtra_griglia=st.multiselect(
+            "Filtra per ruolo",
+            options=ruolo_list,
+            default=ruolo_list,
+            key="ruoli_filtri_griglia"  # Chiave unica per ruoli
+        )
+        attributi_filtra_griglia = st.multiselect(
+            "Filtra per attributi",
+            options=attributi_unici,
+            default=attributi_unici,
+            key="attributi_filtri_griglia"  # Chiave unica per attributi
+        )
+
+        fasce_filtra_griglia = st.multiselect(
+            "Filtra per fasce",
+            options=fasce,
+            default=fasce,
+            key="fasce_filtri_griglia"  # Chiave unica per ruoli
+        )
+
+        st.dataframe(
+            fasce_selezionate_op[
+                (fasce_selezionate_op.Ruolo.isin(ruoli_filtra_griglia)) &
+                (fasce_selezionate_op.Fascia.isin(fasce_filtra_griglia)) &
+                (fasce_selezionate_op.Attributi.isin(attributi_filtra_griglia))
+                ]
+        )
+
+
 
 
 
