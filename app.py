@@ -7,7 +7,7 @@ from statistics import mean
 st.set_page_config(layout="wide")
 
 # Carica i dati dal CSV
-df = pd.read_csv('dati_uniti.csv')
+df = pd.read_csv('/Users/umbertobertonelli/PycharmProjects/pythonProject4/dati_uniti.csv')
 df=df[df['Ruolo']!='Ruolo']
 df['Punteggio FantaCalcioPedia'] = pd.to_numeric(df['Punteggio FantaCalcioPedia'], errors='coerce')
 df['Solidità fantainvestimento'] = pd.to_numeric(df['Solidità fantainvestimento'], errors='coerce')
@@ -66,15 +66,7 @@ df["Assist previsti"] = df["Assist previsti"].apply(estrai_numero1)
 df.loc[df['Ruolo'] == 'P', 'Gol previsti'] *= -1
 
 
-# Nome del file CSV per i giocatori papabili
-papabili_file = 'papabili_players.csv'
 
-# Carica i giocatori papabili salvati in precedenza se esiste il file CSV
-if os.path.exists(papabili_file):
-    papabili_data = pd.read_csv(papabili_file)
-    previously_papabili_players = papabili_data['Nome'].tolist()
-else:
-    previously_papabili_players = []
 
 # Crea una lista dei ruoli
 ruolo_list = df['Ruolo'].unique().tolist()
@@ -279,9 +271,14 @@ with st.expander(f"Griglia fasce"):
     else:
         # Se il file esiste, crea un DataFrame
         fasce_selezionate = pd.read_csv(file_path)
-        fasce_selezionate_op=fasce_selezionate.merge(df,on='Nome')[["Nome", "Squadra", "Ruolo", "ALG FCP", "Punteggio FantaCalcioPedia",
-                                  "Solidità fantainvestimento", "Resistenza infortuni", "Qt.A", "Attributi",
-                                  "Gol previsti", "Presenze previste", "Assist previsti", "Prezzo",'Fascia']]
+        fasce_selezionate_op = fasce_selezionate.merge(df, on='Nome', how='left')
+
+        # Selezione delle colonne da mostrare
+        fasce_selezionate_op = fasce_selezionate_op[[
+            "Nome", "Squadra", "Ruolo", "ALG FCP", "Punteggio FantaCalcioPedia",
+            "Solidità fantainvestimento", "Resistenza infortuni", "Qt.A", "Attributi",
+            "Gol previsti", "Presenze previste", "Assist previsti", "Prezzo", 'Fascia'
+        ]]
 
         ruoli_filtra_griglia=st.multiselect(
             "Filtra per ruolo",
@@ -307,9 +304,11 @@ with st.expander(f"Griglia fasce"):
             fasce_selezionate_op[
                 (fasce_selezionate_op.Ruolo.isin(ruoli_filtra_griglia)) &
                 (fasce_selezionate_op.Fascia.isin(fasce_filtra_griglia)) &
-                (fasce_selezionate_op.Attributi.isin(attributi_filtra_griglia))
+                (fasce_selezionate_op.Attributi.apply(
+                    lambda x: any(attr in x.split('-') for attr in attributi_filtra_griglia)))
                 ]
         )
+
 
 
 
